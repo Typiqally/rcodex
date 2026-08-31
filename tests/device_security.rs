@@ -2,14 +2,17 @@
 use std::os::unix::fs::PermissionsExt;
 
 use rcodex::{
-    device_key::{
-        create_os_protected_device_key, delete_os_protected_device_key, p256_x963_to_spki_der,
-        sign_with_os_protected_device_key,
-    },
+    device_key::p256_x963_to_spki_der,
     protocol::EnrollmentRecord,
     state::{
         ControllerState, delete_controller_state, load_controller_state, save_controller_state,
     },
+};
+
+#[cfg(target_os = "macos")]
+use rcodex::device_key::{
+    create_os_protected_device_key, delete_os_protected_device_key,
+    sign_with_os_protected_device_key,
 };
 
 fn enrollment() -> EnrollmentRecord {
