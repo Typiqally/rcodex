@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use rcodex::{
     api::RelayApi,
+    compatibility::{verify_remote_codex_version, verify_stock_codex_version},
     controller::{enroll, ensure_session},
     shim::{LocalShim, SHIM_AUTH_TOKEN_ENV, codex_remote_args, select_environment},
     state::load_controller_state,
@@ -184,23 +185,14 @@ async fn run_remote_tui(
     requested_device: Option<&str>,
     remote_cwd: Option<&std::path::Path>,
 ) -> Result<()> {
-    verify_stock_codex_version().await?;
+    ensure_stock_codex_version().await?;
     let (state, session) = ensure_session(api, &paths.state).await?;
     let auth = api.auth().await?;
     let environments = api
         .list_environments(Some(&state.enrollment.client_id))
         .await?;
     let environment = select_environment(&environments, requested_device)?;
-    if environment.app_server_version.as_deref() != Some("0.151.0") {
-        anyhow::bail!(
-            "remote host {} runs Codex {}; rcodex is pinned to 0.151.0",
-            environment.display_name(),
-            environment
-                .app_server_version
-                .as_deref()
-                .unwrap_or("unknown")
-        );
-    }
+    verify_remote_codex_version(environment)?;
     let environment_id = environment.env_id.clone();
     let environment_name = environment.display_name().to_owned();
     let relay =
@@ -238,7 +230,7 @@ async fn run_remote_tui(
     }
 }
 
-async fn verify_stock_codex_version() -> Result<()> {
+async fn ensure_stock_codex_version() -> Result<()> {
     let output = tokio::process::Command::new("codex")
         .arg("--version")
         .output()
@@ -248,13 +240,7 @@ async fn verify_stock_codex_version() -> Result<()> {
         anyhow::bail!("stock Codex CLI could not report its version");
     }
     let version = String::from_utf8(output.stdout).context("stock Codex version is not UTF-8")?;
-    if version.trim() != "codex-cli 0.151.0" {
-        anyhow::bail!(
-            "rcodex is pinned to codex-cli 0.151.0, but PATH provides {}",
-            version.trim()
-        );
-    }
-    Ok(())
+    verify_stock_codex_version(&version)
 }
 
 struct Paths {

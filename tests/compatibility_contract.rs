@@ -1,6 +1,8 @@
 use rcodex::{
     api::RemoteEnvironment,
-    compatibility::{SUPPORTED_CODEX_VERSION, verify_remote_codex_version, verify_stock_codex_version},
+    compatibility::{
+        SUPPORTED_CODEX_VERSION, verify_remote_codex_version, verify_stock_codex_version,
+    },
 };
 
 fn environment(version: Option<&str>) -> RemoteEnvironment {

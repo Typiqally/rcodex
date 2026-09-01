@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod compatibility;
 pub mod controller;
 pub mod device_key;
 pub mod oauth;
