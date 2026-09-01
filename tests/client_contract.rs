@@ -45,7 +45,7 @@ fn parses_environment_list_and_uses_desktop_display_fallbacks() {
             "busy": false,
             "os": "linux",
             "arch": "x86_64",
-            "app_server_version": "0.151.0",
+            "app_server_version": "0.152.0",
             "installation_id": "installation-id",
             "last_seen_at": "2026-08-31T12:00:00Z"
         }],

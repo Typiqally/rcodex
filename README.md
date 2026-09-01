@@ -23,7 +23,7 @@ stock Codex TUI
 
 - The controller currently requires macOS because its signing key is stored as
   a non-exportable key in the login Keychain.
-- The local Codex CLI and remote App Server must both be exactly `0.151.0`.
+- The local Codex CLI and remote App Server must both be exactly `0.152.0`.
 - The remote host must already be configured and online in Codex Remote
   Control.
 - A ChatGPT-authenticated Codex CLI installation is required. API-key-only
@@ -45,7 +45,7 @@ codex --version
 cargo install --locked --path .
 ```
 
-`codex --version` must currently print `codex-cli 0.151.0`.
+`codex --version` must currently print `codex-cli 0.152.0`.
 
 ## Enroll and pair
 

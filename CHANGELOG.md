@@ -16,6 +16,8 @@ All notable changes to this project will be documented here. The format follows
 
 ### Changed
 
+- Updated the strict local CLI and remote App Server compatibility pin to
+  Codex `0.152.0`.
 - Token refresh now abandons its write if another process changed the Codex
   authentication file while the network request was in flight.
 
