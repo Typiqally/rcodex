@@ -37,31 +37,37 @@ stock Codex TUI
 
 - The controller currently requires macOS because its signing key is stored as
   a non-exportable key in the login Keychain.
-- The local Codex CLI and remote App Server must both be exactly `0.153.0`.
+- The local Codex CLI must expose the `--remote` and
+  `--remote-auth-token-env` terminal options.
+- The local Codex CLI and remote App Server must report the same version.
 - The remote host must already be configured and online in Codex Remote
   Control.
 - A ChatGPT-authenticated Codex CLI installation is required. API-key-only
   authentication is not supported.
 
-The exact version check is intentional while the relay protocol remains
-experimental. See OpenAI's documentation for the supported
+`rcodex` does not pin a particular Codex release. It checks capabilities and
+local/remote version parity at runtime, so matching future releases work
+without an `rcodex` update. Mismatched releases are rejected because the
+transport remains experimental; update the older Codex installation so both
+versions match. See OpenAI's documentation for the supported
 [App Server remote transport](https://developers.openai.com/codex/app-server)
 and the official [Remote connections](https://developers.openai.com/codex/remote-connections)
 workflow.
 
 ## Install
 
-Install Rust, then install the exact compatible OpenAI Codex CLI release from
-npm and authenticate with ChatGPT:
+Install Rust, then install the latest OpenAI Codex CLI release from npm and
+authenticate with ChatGPT:
 
 ```sh
-npm install -g @openai/codex@0.153.0
+npm install -g @openai/codex@latest
 codex login
 codex --version
 cargo install --locked --path .
 ```
 
-`codex --version` must currently print `codex-cli 0.153.0`. See the official
+Install or update Codex on the remote host at the same time so its App Server
+version matches the local CLI. See the official
 [Codex CLI guide](https://developers.openai.com/codex/cli/) for platform setup
 and authentication options.
 

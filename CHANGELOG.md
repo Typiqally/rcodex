@@ -16,8 +16,9 @@ All notable changes to this project will be documented here. The format follows
 
 ### Changed
 
-- Updated the strict local CLI and remote App Server compatibility pin to
-  Codex `0.153.0`.
+- Replaced the fixed Codex release pin with runtime checks for the required
+  remote terminal options and matching local CLI and remote App Server
+  versions.
 - Improved README discoverability for Codex CLI remote control, remote terminal
   UI, Codex App Server, and remote development searches.
 - Token refresh now abandons its write if another process changed the Codex
