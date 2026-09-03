@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use rcodex::{
     api::RelayApi,
-    compatibility::{verify_remote_codex_version, verify_stock_codex_version},
+    compatibility::{
+        parse_stock_codex_version, verify_remote_codex_version, verify_stock_codex_capabilities,
+    },
     controller::{enroll, ensure_session},
     shim::{LocalShim, SHIM_AUTH_TOKEN_ENV, codex_remote_args, select_environment},
     state::load_controller_state,
@@ -185,14 +187,14 @@ async fn run_remote_tui(
     requested_device: Option<&str>,
     remote_cwd: Option<&std::path::Path>,
 ) -> Result<()> {
-    ensure_stock_codex_version().await?;
+    let stock_codex_version = inspect_stock_codex().await?;
     let (state, session) = ensure_session(api, &paths.state).await?;
     let auth = api.auth().await?;
     let environments = api
         .list_environments(Some(&state.enrollment.client_id))
         .await?;
     let environment = select_environment(&environments, requested_device)?;
-    verify_remote_codex_version(environment)?;
+    verify_remote_codex_version(&stock_codex_version, environment)?;
     let environment_id = environment.env_id.clone();
     let environment_name = environment.display_name().to_owned();
     let relay =
@@ -230,17 +232,31 @@ async fn run_remote_tui(
     }
 }
 
-async fn ensure_stock_codex_version() -> Result<()> {
-    let output = tokio::process::Command::new("codex")
+async fn inspect_stock_codex() -> Result<String> {
+    let version_output = tokio::process::Command::new("codex")
         .arg("--version")
         .output()
         .await
         .context("run stock Codex CLI; ensure `codex` is on PATH")?;
-    if !output.status.success() {
+    if !version_output.status.success() {
         anyhow::bail!("stock Codex CLI could not report its version");
     }
-    let version = String::from_utf8(output.stdout).context("stock Codex version is not UTF-8")?;
-    verify_stock_codex_version(&version)
+    let version_output =
+        String::from_utf8(version_output.stdout).context("stock Codex version is not UTF-8")?;
+    let version = parse_stock_codex_version(&version_output)?;
+
+    let help_output = tokio::process::Command::new("codex")
+        .arg("--help")
+        .output()
+        .await
+        .context("inspect stock Codex CLI remote terminal support")?;
+    if !help_output.status.success() {
+        anyhow::bail!("stock Codex CLI could not report its supported options");
+    }
+    let help_output =
+        String::from_utf8(help_output.stdout).context("stock Codex help is not UTF-8")?;
+    verify_stock_codex_capabilities(&help_output)?;
+    Ok(version)
 }
 
 struct Paths {

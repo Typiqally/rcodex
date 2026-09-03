@@ -1,8 +1,7 @@
 use rcodex::{
     api::RemoteEnvironment,
     compatibility::{
-        parse_stock_codex_version, verify_remote_codex_version,
-        verify_stock_codex_capabilities,
+        parse_stock_codex_version, verify_remote_codex_version, verify_stock_codex_capabilities,
     },
 };
 
@@ -62,7 +61,11 @@ fn stock_codex_must_expose_both_remote_terminal_options() {
         "--remotely <ADDR>\n--remote-auth-token-environment <ENV_VAR>\n",
     ] {
         let error = verify_stock_codex_capabilities(unsupported).unwrap_err();
-        assert!(error.to_string().contains("required remote terminal options"));
+        assert!(
+            error
+                .to_string()
+                .contains("required remote terminal options")
+        );
     }
 }
 
