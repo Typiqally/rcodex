@@ -24,19 +24,19 @@ fn environment(version: Option<&str>) -> RemoteEnvironment {
 }
 
 #[test]
-fn codex_0_152_is_the_supported_local_and_remote_version() {
-    assert_eq!(SUPPORTED_CODEX_VERSION, "0.152.0");
-    verify_stock_codex_version("codex-cli 0.152.0\n").unwrap();
-    verify_remote_codex_version(&environment(Some("0.152.0"))).unwrap();
+fn codex_0_153_is_the_supported_local_and_remote_version() {
+    assert_eq!(SUPPORTED_CODEX_VERSION, "0.153.0");
+    verify_stock_codex_version("codex-cli 0.153.0\n").unwrap();
+    verify_remote_codex_version(&environment(Some("0.153.0"))).unwrap();
 }
 
 #[test]
 fn stale_or_unreported_codex_versions_are_rejected() {
-    let local_error = verify_stock_codex_version("codex-cli 0.151.0\n").unwrap_err();
-    assert!(local_error.to_string().contains("codex-cli 0.152.0"));
+    let local_error = verify_stock_codex_version("codex-cli 0.152.0\n").unwrap_err();
+    assert!(local_error.to_string().contains("codex-cli 0.153.0"));
 
-    let remote_error = verify_remote_codex_version(&environment(Some("0.151.0"))).unwrap_err();
-    assert!(remote_error.to_string().contains("pinned to 0.152.0"));
+    let remote_error = verify_remote_codex_version(&environment(Some("0.152.0"))).unwrap_err();
+    assert!(remote_error.to_string().contains("pinned to 0.153.0"));
 
     let unknown_error = verify_remote_codex_version(&environment(None)).unwrap_err();
     assert!(unknown_error.to_string().contains("Codex unknown"));

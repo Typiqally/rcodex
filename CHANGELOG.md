@@ -17,7 +17,9 @@ All notable changes to this project will be documented here. The format follows
 ### Changed
 
 - Updated the strict local CLI and remote App Server compatibility pin to
-  Codex `0.152.0`.
+  Codex `0.153.0`.
+- Improved README discoverability for Codex CLI remote control, remote terminal
+  UI, Codex App Server, and remote development searches.
 - Token refresh now abandons its write if another process changed the Codex
   authentication file while the network request was in flight.
 

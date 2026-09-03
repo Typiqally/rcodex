@@ -11,7 +11,7 @@ use tokio_tungstenite::{
 
 fn environment(id: &str, online: bool) -> RemoteEnvironment {
     RemoteEnvironment {
-        app_server_version: Some("0.152.0".into()),
+        app_server_version: Some("0.153.0".into()),
         arch: Some("x86_64".into()),
         busy: false,
         client_type: Some("cli".into()),

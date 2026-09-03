@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 
 use crate::api::RemoteEnvironment;
 
-pub const SUPPORTED_CODEX_VERSION: &str = "0.152.0";
+pub const SUPPORTED_CODEX_VERSION: &str = "0.153.0";
 
 pub fn verify_stock_codex_version(version_output: &str) -> Result<()> {
     let expected = format!("codex-cli {SUPPORTED_CODEX_VERSION}");

@@ -1,8 +1,14 @@
-# rcodex
+# rcodex — remote control for OpenAI Codex CLI
 
-`rcodex` runs the stock Codex terminal interface against a paired remote Codex
-host through OpenAI's relay. It does not use SSH, install a second TUI, or
-replace the `codex` executable.
+`rcodex` is an unofficial macOS command-line client for connecting the stock
+OpenAI Codex CLI terminal UI (TUI) to a paired remote Codex host. It lets you
+run the official Codex terminal locally while Codex works with the files,
+shell, tools, and compute on another development machine through OpenAI's
+relay.
+
+Unlike a custom web interface or SSH wrapper, `rcodex` does not replace the
+`codex` executable, install a second TUI, or expose Codex App Server directly
+to the public internet.
 
 ```text
 stock Codex TUI
@@ -11,19 +17,27 @@ stock Codex TUI
    rcodex ───── OpenAI relay ───── paired Codex host
 ```
 
+## What rcodex provides
+
+- The familiar stock Codex CLI and terminal UI on your local Mac.
+- Terminal access to a computer already paired with Codex Remote Control.
+- Remote development from a selected working directory on the Codex host.
+- An authenticated loopback WebSocket bridge to OpenAI's relay, with no direct
+  inbound connection to the remote machine.
+
 > [!WARNING]
 > `rcodex` is unofficial experimental software. It is not affiliated with or
-> supported by OpenAI. Although Codex App Server and remote TUI connections are
-> documented, controller enrollment currently relies on observed,
-> undocumented ChatGPT relay and OAuth behavior. Those interfaces can change or
-> stop working without notice. Review the code before using it with your
-> account.
+> supported by OpenAI. Although Codex App Server and remote terminal UI
+> connections are documented, controller enrollment currently relies on
+> observed, undocumented ChatGPT relay and OAuth behavior. Those interfaces can
+> change or stop working without notice. Review the code before using it with
+> your account.
 
 ## Current compatibility
 
 - The controller currently requires macOS because its signing key is stored as
   a non-exportable key in the login Keychain.
-- The local Codex CLI and remote App Server must both be exactly `0.152.0`.
+- The local Codex CLI and remote App Server must both be exactly `0.153.0`.
 - The remote host must already be configured and online in Codex Remote
   Control.
 - A ChatGPT-authenticated Codex CLI installation is required. API-key-only
@@ -37,15 +51,19 @@ workflow.
 
 ## Install
 
-Install Rust and the stock Codex CLI, then authenticate Codex with ChatGPT:
+Install Rust, then install the exact compatible OpenAI Codex CLI release from
+npm and authenticate with ChatGPT:
 
 ```sh
+npm install -g @openai/codex@0.153.0
 codex login
 codex --version
 cargo install --locked --path .
 ```
 
-`codex --version` must currently print `codex-cli 0.152.0`.
+`codex --version` must currently print `codex-cli 0.153.0`. See the official
+[Codex CLI guide](https://developers.openai.com/codex/cli/) for platform setup
+and authentication options.
 
 ## Enroll and pair
 
@@ -94,6 +112,27 @@ rcodex devices
 rcodex session
 rcodex probe --device ENV_ID
 ```
+
+## Codex remote-control FAQ
+
+### Can I use Codex CLI with a remote development machine?
+
+Yes. `rcodex` keeps the official Codex CLI terminal interface on your Mac and
+connects it to a compatible, paired Codex host. Commands and tools then run in
+the remote working directory you select.
+
+### Is rcodex a Codex SSH client?
+
+No. `rcodex` connects to a host already registered with Codex Remote Control
+through OpenAI's relay. For the supported SSH-based workflow, use OpenAI's
+[Remote connections](https://developers.openai.com/codex/remote-connections)
+documentation.
+
+### Does rcodex include or replace the OpenAI Codex CLI?
+
+No. The official `codex` executable must already be installed. `rcodex`
+checks its version, starts its stock terminal UI, and bridges that session to
+the selected remote Codex App Server.
 
 ## Uninstall and revoke
 
@@ -149,5 +188,5 @@ full workflows.
 ## License and trademarks
 
 The project is available under the [MIT License](LICENSE). OpenAI, ChatGPT, and
-Codex are trademarks of their respective owner. Use of those names describes
+Codex are trademarks of their respective owners. Use of those names describes
 compatibility only and does not imply endorsement.

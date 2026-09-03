@@ -3,12 +3,12 @@ name = "rcodex"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Terminal controller for Codex Remote Control"
+description = "Remote-control client for the OpenAI Codex CLI terminal UI"
 readme = "README.md"
 repository = "https://github.com/Typiqally/rcodex"
 homepage = "https://github.com/Typiqally/rcodex"
 documentation = "https://github.com/Typiqally/rcodex#readme"
-keywords = ["codex", "remote", "terminal", "cli"]
+keywords = ["codex", "openai", "remote-control", "terminal", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 publish = false
 
