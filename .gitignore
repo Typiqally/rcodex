@@ -5,3 +5,5 @@
 !.env.example
 auth.json
 state.json
+__pycache__/
+*.pyc

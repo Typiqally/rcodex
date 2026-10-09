@@ -4,6 +4,10 @@ use anyhow::{Context, Result, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Map, Value, json};
+use tokio::io::{
+    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter,
+};
+use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
@@ -32,6 +36,7 @@ const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SEGMENTS: usize = MAX_MESSAGE_BYTES.div_ceil(SEGMENT_TARGET_BYTES);
 const MAX_CONCURRENT_ASSEMBLIES: usize = 8;
 const MAX_BUFFERED_ASSEMBLY_BYTES: usize = MAX_MESSAGE_BYTES;
+const MAX_LOCAL_APP_MESSAGE_BYTES: usize = 1024 * 1024;
 
 type RelaySocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -352,6 +357,75 @@ impl RelayTransport {
         Ok(())
     }
 
+    /// Bridge app-server JSON messages over bounded stdin/stdout JSONL.
+    ///
+    /// Relay authentication and enrollment stay inside this process. The
+    /// caller sees only app-server payloads after the broker handshake.
+    pub async fn bridge_stdio(mut self) -> Result<()> {
+        let socket = self
+            .socket
+            .take()
+            .context("remote-control websocket is not available")?;
+        let (mut relay_writer, mut relay_reader) = socket.split();
+        let (sender, mut local_messages) = mpsc::channel(32);
+        tokio::spawn(read_local_app_messages(tokio::io::stdin(), sender));
+        let mut output = BufWriter::new(tokio::io::stdout());
+        loop {
+            tokio::select! {
+                local_message = local_messages.recv() => {
+                    let Some(local_message) = local_message else { break };
+                    let message = local_message?;
+                    for segment in self.outgoing_app_segments(message)? {
+                        relay_writer.send(Message::Text(serde_json::to_string(&segment)?.into()))
+                            .await.context("forward broker app message to relay")?;
+                    }
+                }
+                relay_frame = relay_reader.next() => {
+                    let Some(relay_frame) = relay_frame else {
+                        bail!("remote-control relay websocket closed");
+                    };
+                    match relay_frame.context("read remote-control websocket frame")? {
+                        Message::Text(text) => {
+                            let envelope = serde_json::from_str(&text)
+                                .context("remote-control websocket frame is not JSON")?;
+                            if let Some(message) = self.observe_server_envelope(envelope)? {
+                                write_local_app_message(&mut output, &message).await?;
+                            }
+                        }
+                        Message::Binary(bytes) => {
+                            let envelope = serde_json::from_slice(&bytes)
+                                .context("remote-control websocket frame is not JSON")?;
+                            if let Some(message) = self.observe_server_envelope(envelope)? {
+                                write_local_app_message(&mut output, &message).await?;
+                            }
+                        }
+                        Message::Ping(bytes) => {
+                            relay_writer.send(Message::Pong(bytes)).await
+                                .context("answer remote-control websocket ping")?;
+                        }
+                        Message::Close(frame) => {
+                            bail!("remote-control websocket closed: {frame:?}");
+                        }
+                        Message::Pong(_) | Message::Frame(_) => {}
+                    }
+                }
+            }
+        }
+        let close = json!({
+            "type": "client_closed",
+            "client_id": self.client_id,
+            "seq_id": self.next_client_sequence,
+            "stream_id": self.stream_id,
+            "env_id": self.environment_id,
+        });
+        let _ = relay_writer
+            .send(Message::Text(serde_json::to_string(&close)?.into()))
+            .await;
+        let _ = relay_writer.close().await;
+        let _ = output.flush().await;
+        Ok(())
+    }
+
     pub async fn close(mut self) -> Result<()> {
         let envelope = json!({
             "type": "client_closed",
@@ -370,6 +444,61 @@ impl RelayTransport {
             .context("send remote-control client close")?;
         socket.close(None).await.context("close relay websocket")
     }
+}
+
+async fn read_local_app_messages(
+    input: impl AsyncRead + Unpin,
+    sender: mpsc::Sender<Result<Value>>,
+) {
+    let mut reader = BufReader::new(input);
+    loop {
+        let mut bytes = Vec::new();
+        let read = (&mut reader)
+            .take((MAX_LOCAL_APP_MESSAGE_BYTES + 2) as u64)
+            .read_until(b'\n', &mut bytes)
+            .await;
+        let message = match read {
+            Ok(0) => break,
+            Ok(_)
+                if bytes.len()
+                    > MAX_LOCAL_APP_MESSAGE_BYTES + usize::from(bytes.ends_with(b"\n")) =>
+            {
+                Err(anyhow::anyhow!(
+                    "broker app message exceeded the safety limit"
+                ))
+            }
+            Ok(_) => {
+                while matches!(bytes.last(), Some(b'\n' | b'\r')) {
+                    bytes.pop();
+                }
+                serde_json::from_slice(&bytes).context("broker app message is not JSON")
+            }
+            Err(_) => Err(anyhow::anyhow!("could not read broker app message")),
+        };
+        let stop = message.is_err();
+        if sender.send(message).await.is_err() || stop {
+            break;
+        }
+    }
+}
+
+async fn write_local_app_message(
+    output: &mut (impl AsyncWrite + Unpin),
+    message: &Value,
+) -> Result<()> {
+    let bytes = serde_json::to_vec(message).context("serialize broker app message")?;
+    if bytes.len() > MAX_LOCAL_APP_MESSAGE_BYTES {
+        bail!("broker app message exceeded the safety limit");
+    }
+    output
+        .write_all(&bytes)
+        .await
+        .context("write broker app message")?;
+    output
+        .write_all(b"\n")
+        .await
+        .context("finish broker app message")?;
+    output.flush().await.context("flush broker app message")
 }
 
 pub fn relay_websocket_url() -> Result<Url> {

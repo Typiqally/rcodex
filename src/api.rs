@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::{collections::BTreeSet, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use reqwest::{Method, Response, StatusCode};
@@ -11,6 +11,10 @@ use crate::{
     protocol::{API_BASE, EnrollmentRecord},
     relay::{EnrollmentStartResponse, RemoteControlSession},
 };
+
+const MAX_REMOTE_ENVIRONMENTS: usize = 100;
+const MAX_ENVIRONMENT_PAGES: usize = 32;
+const MAX_CURSOR_BYTES: usize = 1024;
 
 #[derive(Clone, Deserialize)]
 pub struct RemoteEnvironment {
@@ -89,6 +93,7 @@ impl RelayApi {
     ) -> Result<Vec<RemoteEnvironment>> {
         let mut cursor: Option<String> = None;
         let mut environments = Vec::new();
+        let mut seen_cursors = BTreeSet::new();
         loop {
             let root = match client_id {
                 Some(client_id) => format!(
@@ -105,8 +110,7 @@ impl RelayApi {
             let page: EnvironmentList = self
                 .request_json(Method::GET, &format!("{root}?{}", query.finish()), None)
                 .await?;
-            environments.extend(page.items);
-            cursor = page.cursor;
+            cursor = accept_environment_page(&mut environments, &mut seen_cursors, page)?;
             if cursor.is_none() {
                 return Ok(environments);
             }
@@ -242,6 +246,33 @@ impl RelayApi {
             return Ok(response);
         }
     }
+}
+
+pub fn accept_environment_page(
+    environments: &mut Vec<RemoteEnvironment>,
+    seen_cursors: &mut BTreeSet<String>,
+    page: EnvironmentList,
+) -> Result<Option<String>> {
+    let next_length = environments
+        .len()
+        .checked_add(page.items.len())
+        .context("relay environment count overflowed")?;
+    if next_length > MAX_REMOTE_ENVIRONMENTS
+        || (next_length == MAX_REMOTE_ENVIRONMENTS && page.cursor.is_some())
+    {
+        bail!("relay returned more environments than the broker safety limit");
+    }
+    if let Some(cursor) = page.cursor.as_deref()
+        && (cursor.is_empty()
+            || cursor.len() > MAX_CURSOR_BYTES
+            || cursor.chars().any(char::is_control)
+            || seen_cursors.len() == MAX_ENVIRONMENT_PAGES
+            || !seen_cursors.insert(cursor.to_owned()))
+    {
+        bail!("relay returned an invalid environment cursor");
+    }
+    environments.extend(page.items);
+    Ok(page.cursor)
 }
 
 pub fn build_manual_pairing_body(client_id: &str, manual_pairing_code: &str) -> Result<Value> {

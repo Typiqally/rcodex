@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod broker;
 pub mod compatibility;
 pub mod controller;
 pub mod device_key;
@@ -11,3 +12,4 @@ pub mod relay;
 pub mod shim;
 pub mod state;
 pub mod transport;
+pub mod update;

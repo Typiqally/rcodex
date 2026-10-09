@@ -18,20 +18,21 @@ base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4.5", features = ["derive"] }
 futures-util = "0.3"
+fs2 = "0.4"
 rand = "0.9"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rpassword = "7.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+semver = "1.0"
 sha2 = "0.10"
 subtle = "2.6"
-tokio = { version = "1.47", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
+thiserror = "2.0"
+tempfile = "3.21"
+tokio = { version = "1.47", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 url = "2.5"
 uuid = { version = "1.18", features = ["v4"] }
-
-[dev-dependencies]
-tempfile = "3.21"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

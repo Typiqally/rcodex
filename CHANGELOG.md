@@ -8,6 +8,12 @@ All notable changes to this project will be documented here. The format follows
 
 ### Added
 
+- Opt-in daily signed binary updates, compatibility-aware release selection,
+  active-session installation locks, and rollback that disables auto-updates.
+- Daily upstream Codex CLI/schema checks with deduplicated draft evidence PRs
+  and failure issues; compatibility still requires live relay validation.
+- Apple Silicon and Intel release workflow with signed GitHub attestations and
+  explicit personal/live test confirmation before publication.
 - Authenticated per-run loopback bridge for the stock Codex TUI.
 - Bounded relay message reassembly.
 - Safe, idempotent `rcodex unenroll` cleanup.
@@ -16,9 +22,9 @@ All notable changes to this project will be documented here. The format follows
 
 ### Changed
 
-- Replaced the fixed Codex release pin with runtime checks for the required
-  remote terminal options and matching local CLI and remote App Server
-  versions.
+- Updated rustls to `0.23.45` to address `RUSTSEC-2026-0285`.
+- Updated the strict local CLI and remote App Server compatibility pin to
+  Codex `0.153.0`.
 - Improved README discoverability for Codex CLI remote control, remote terminal
   UI, Codex App Server, and remote development searches.
 - Token refresh now abandons its write if another process changed the Codex

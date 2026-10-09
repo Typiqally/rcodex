@@ -4,15 +4,19 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use rcodex::{
     api::RelayApi,
-    compatibility::{
-        parse_stock_codex_version, verify_remote_codex_version, verify_stock_codex_capabilities,
+    broker::{
+        BrokerAction, BrokerErrorCode, BrokerHost, BrokerResponse, BrokerSession,
+        MAX_BROKER_FRAME_BYTES, decode_request,
     },
+    compatibility::{verify_remote_codex_version, verify_stock_codex_version},
     controller::{enroll, ensure_session},
     shim::{LocalShim, SHIM_AUTH_TOKEN_ENV, codex_remote_args, select_environment},
     state::load_controller_state,
     transport::RelayTransport,
+    update::{self, Installation, UpdateSettings},
 };
 use serde_json::json;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 #[derive(Parser)]
 #[command(version, about = "Control a remote Codex host through OpenAI's relay")]
@@ -29,6 +33,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Check, install, configure, or roll back signed rcodex updates.
+    Update {
+        #[command(subcommand)]
+        action: UpdateAction,
+    },
     /// List Codex hosts visible to the current ChatGPT account.
     Devices,
     /// Enroll a separate rcodex controller identity.
@@ -51,6 +60,23 @@ enum Command {
     /// Revoke an obsolete rcodex controller identity.
     #[command(hide = true)]
     RevokeClient { client_id: String },
+    /// Serve the isolated relay controller over bounded JSONL.
+    #[command(hide = true, about = "Serve the relay controller over bounded JSONL")]
+    Broker,
+}
+
+#[derive(Subcommand)]
+enum UpdateAction {
+    /// Check for a signed release compatible with the local and selected remote Codex.
+    Check,
+    /// Install a compatible signed release while no rcodex session is running.
+    Install,
+    /// Enable a daily update check before starting a TUI session.
+    Enable,
+    /// Disable automatic updates.
+    Disable,
+    /// Restore the previous executable and disable automatic updates.
+    Rollback,
 }
 
 #[tokio::main]
@@ -64,6 +90,9 @@ async fn main() {
 async fn run() -> Result<()> {
     let cli = Cli::parse();
     let paths = Paths::resolve()?;
+    if let Some(Command::Update { action }) = cli.command {
+        return run_update(action, &paths, cli.device.as_deref()).await;
+    }
     let api = RelayApi::new(paths.auth.clone())?;
     let Some(command) = cli.command else {
         return run_remote_tui(
@@ -75,6 +104,7 @@ async fn run() -> Result<()> {
         .await;
     };
     match command {
+        Command::Update { .. } => unreachable!("handled before relay initialization"),
         Command::Devices => {
             let client_id = if paths.state.exists() {
                 Some(load_controller_state(&paths.state)?.enrollment.client_id)
@@ -177,8 +207,330 @@ async fn run() -> Result<()> {
             api.revoke_client(&client_id).await?;
             println!("Revoked obsolete rcodex client {client_id}.");
         }
+        Command::Broker => {
+            let _session = Installation::lock(&std::env::current_exe()?, false)?;
+            run_broker(&api, &paths).await?;
+        }
     }
     Ok(())
+}
+
+async fn run_update(action: UpdateAction, paths: &Paths, device: Option<&str>) -> Result<()> {
+    let settings_path = paths.state.with_file_name("update.json");
+    match action {
+        UpdateAction::Enable | UpdateAction::Disable | UpdateAction::Rollback => {
+            let installation = Installation::lock(&std::env::current_exe()?, true)?;
+            let mut settings = UpdateSettings::load(&settings_path)?;
+            match action {
+                UpdateAction::Enable => {
+                    update::target()?;
+                    let status = tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        tokio::process::Command::new("gh")
+                            .args(["attestation", "verify", "--help"])
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .kill_on_drop(true)
+                            .status(),
+                    )
+                    .await
+                    .context("GitHub CLI check timed out")?
+                    .context("install GitHub CLI (`gh`) before enabling signed updates")?;
+                    if !status.success() {
+                        anyhow::bail!("GitHub CLI must support `gh attestation verify`");
+                    }
+                    settings.enabled = true;
+                    settings.last_checked = None;
+                }
+                UpdateAction::Disable => settings.enabled = false,
+                UpdateAction::Rollback => {
+                    // Disable first so the restored executable is not replaced on its next start.
+                    settings.enabled = false;
+                    settings.save(&settings_path)?;
+                    installation.rollback()?;
+                    println!(
+                        "Restored the previous rcodex executable; automatic updates are disabled."
+                    );
+                    return Ok(());
+                }
+                _ => unreachable!(),
+            }
+            settings.save(&settings_path)?;
+            println!(
+                "Automatic rcodex updates {}.",
+                if settings.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            );
+        }
+        UpdateAction::Check | UpdateAction::Install => {
+            let local = update::local_codex_version().await?;
+            let api = RelayApi::new(paths.auth.clone())?;
+            let (state, _) = ensure_session(&api, &paths.state).await?;
+            let environments = api
+                .list_environments(Some(&state.enrollment.client_id))
+                .await?;
+            let remote = select_environment(&environments, device)?;
+            let remote_version = remote
+                .app_server_version
+                .as_deref()
+                .context("remote Codex version is unknown")?;
+            let Some(available) =
+                update::check(env!("CARGO_PKG_VERSION"), &local, remote_version).await?
+            else {
+                println!("No newer signed rcodex release supports local/remote Codex {local}.");
+                return Ok(());
+            };
+            if matches!(action, UpdateAction::Install) {
+                let installation = Installation::lock(&std::env::current_exe()?, true)?;
+                available.install(&installation).await?;
+                println!(
+                    "Installed rcodex {}; the next invocation uses it. Run `rcodex update rollback` to restore the previous version.",
+                    available.manifest.version
+                );
+            } else {
+                println!(
+                    "rcodex {} is compatible with local/remote Codex {local}. Run `rcodex update install`.",
+                    available.manifest.version
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn automatic_update(paths: &Paths, local: &str, remote: &str) -> Result<bool> {
+    let settings_path = paths.state.with_file_name("update.json");
+    let mut settings = UpdateSettings::load(&settings_path)?;
+    if !settings.due(update::now()) {
+        return Ok(false);
+    }
+    let executable = std::env::current_exe()?;
+    let Ok(installation) = Installation::lock(&executable, true) else {
+        return Ok(false);
+    };
+    // Re-read after taking the installation lock; another invocation may have checked already.
+    settings = UpdateSettings::load(&settings_path)?;
+    if !settings.due(update::now()) {
+        return Ok(false);
+    }
+    settings.last_checked = Some(update::now());
+    settings.save(&settings_path)?;
+    let Some(available) = update::check(env!("CARGO_PKG_VERSION"), local, remote).await? else {
+        return Ok(false);
+    };
+    available.install(&installation).await?;
+    eprintln!("Updated rcodex to {}.", available.manifest.version);
+    Ok(true)
+}
+
+fn restart_after_update() -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let error = std::process::Command::new(std::env::current_exe()?)
+            .args(std::env::args_os().skip(1))
+            .exec();
+        Err(error).context("restart updated rcodex; run the command again")
+    }
+    #[cfg(not(unix))]
+    anyhow::bail!("rcodex updated; run the command again")
+}
+
+async fn run_broker(api: &RelayApi, paths: &Paths) -> Result<()> {
+    let mut input = BufReader::new(tokio::io::stdin());
+    let mut output = BufWriter::new(tokio::io::stdout());
+    let mut session = BrokerSession::default();
+    loop {
+        let Some(mut frame) = read_broker_frame(&mut input).await? else {
+            return Ok(());
+        };
+        let decoded = decode_request(&frame);
+        frame.fill(0);
+        let request = match decoded {
+            Ok(request) => request,
+            Err(_) => {
+                write_broker_response(
+                    &mut output,
+                    &BrokerResponse::error(0, BrokerErrorCode::InvalidRequest),
+                )
+                .await?;
+                continue;
+            }
+        };
+        let request_id = request.id();
+        let action = match session.accept(request) {
+            Ok(action) => action,
+            Err(code) => {
+                write_broker_response(&mut output, &BrokerResponse::error(request_id, code))
+                    .await?;
+                continue;
+            }
+        };
+        match action {
+            BrokerAction::Respond(response) => {
+                write_broker_response(&mut output, &response).await?;
+            }
+            BrokerAction::Pair { id, pairing_code } => {
+                let response = match pair_and_list_hosts(api, paths, pairing_code.as_str()).await {
+                    Ok(hosts) => BrokerResponse::paired(id, hosts),
+                    Err(code) => BrokerResponse::error(id, code),
+                };
+                write_broker_response(&mut output, &response).await?;
+            }
+            BrokerAction::ListHosts { id } => {
+                let response = match list_broker_hosts(api, paths).await {
+                    Ok(hosts) => BrokerResponse::hosts(id, hosts),
+                    Err(code) => BrokerResponse::error(id, code),
+                };
+                write_broker_response(&mut output, &response).await?;
+            }
+            BrokerAction::OpenAppServer { id, environment_id } => {
+                match open_remote_app_server(api, paths, &environment_id).await {
+                    Ok(transport) => {
+                        write_broker_response(
+                            &mut output,
+                            &BrokerResponse::ready(id, environment_id),
+                        )
+                        .await?;
+                        drop(output);
+                        return transport.bridge_stdio().await;
+                    }
+                    Err(code) => {
+                        write_broker_response(&mut output, &BrokerResponse::error(id, code))
+                            .await?;
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn pair_and_list_hosts(
+    api: &RelayApi,
+    paths: &Paths,
+    pairing_code: &str,
+) -> std::result::Result<Vec<BrokerHost>, BrokerErrorCode> {
+    let (state, _) = ensure_session(api, &paths.state)
+        .await
+        .map_err(|error| classify_broker_error(&error))?;
+    api.pair_client(&state.enrollment.client_id, pairing_code)
+        .await
+        .map_err(|error| classify_broker_error(&error))?;
+    broker_hosts_for_client(api, &state.enrollment.client_id).await
+}
+
+async fn list_broker_hosts(
+    api: &RelayApi,
+    paths: &Paths,
+) -> std::result::Result<Vec<BrokerHost>, BrokerErrorCode> {
+    let (state, _) = ensure_session(api, &paths.state)
+        .await
+        .map_err(|error| classify_broker_error(&error))?;
+    broker_hosts_for_client(api, &state.enrollment.client_id).await
+}
+
+async fn broker_hosts_for_client(
+    api: &RelayApi,
+    client_id: &str,
+) -> std::result::Result<Vec<BrokerHost>, BrokerErrorCode> {
+    let environments = api
+        .list_environments(Some(client_id))
+        .await
+        .map_err(|error| classify_broker_error(&error))?;
+    if environments.len() > 100 {
+        return Err(BrokerErrorCode::RelayUnavailable);
+    }
+    environments
+        .into_iter()
+        .map(BrokerHost::try_from)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|_| BrokerErrorCode::RelayUnavailable)
+}
+
+async fn open_remote_app_server(
+    api: &RelayApi,
+    paths: &Paths,
+    environment_id: &str,
+) -> std::result::Result<RelayTransport, BrokerErrorCode> {
+    ensure_stock_codex_version()
+        .await
+        .map_err(|_| BrokerErrorCode::IncompatibleVersion)?;
+    let (state, session) = ensure_session(api, &paths.state)
+        .await
+        .map_err(|error| classify_broker_error(&error))?;
+    let auth = api
+        .auth()
+        .await
+        .map_err(|error| classify_broker_error(&error))?;
+    let environments = api
+        .list_environments(Some(&state.enrollment.client_id))
+        .await
+        .map_err(|error| classify_broker_error(&error))?;
+    let environment = environments
+        .iter()
+        .find(|environment| environment.env_id == environment_id)
+        .ok_or(BrokerErrorCode::HostNotFound)?;
+    if !environment.online {
+        return Err(BrokerErrorCode::HostOffline);
+    }
+    verify_remote_codex_version(environment).map_err(|_| BrokerErrorCode::IncompatibleVersion)?;
+    RelayTransport::connect(&auth, &state.enrollment, &session, environment_id)
+        .await
+        .map_err(|error| classify_broker_error(&error))
+}
+
+fn classify_broker_error(error: &anyhow::Error) -> BrokerErrorCode {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("auth") || message.contains("login") || message.contains("account") {
+        BrokerErrorCode::AuthenticationRequired
+    } else if message.contains("enroll") || message.contains("keychain") {
+        BrokerErrorCode::EnrollmentRequired
+    } else if message.contains("version") || message.contains("pinned") {
+        BrokerErrorCode::IncompatibleVersion
+    } else {
+        BrokerErrorCode::RelayUnavailable
+    }
+}
+
+async fn read_broker_frame(reader: &mut BufReader<tokio::io::Stdin>) -> Result<Option<Vec<u8>>> {
+    let mut frame = Vec::new();
+    let read = reader
+        .take((MAX_BROKER_FRAME_BYTES + 2) as u64)
+        .read_until(b'\n', &mut frame)
+        .await
+        .context("read relay broker request")?;
+    if read == 0 {
+        return Ok(None);
+    }
+    if frame.len() > MAX_BROKER_FRAME_BYTES + usize::from(frame.ends_with(b"\n")) {
+        anyhow::bail!("relay broker request exceeded the safety limit");
+    }
+    while matches!(frame.last(), Some(b'\n' | b'\r')) {
+        frame.pop();
+    }
+    Ok(Some(frame))
+}
+
+async fn write_broker_response(
+    writer: &mut BufWriter<tokio::io::Stdout>,
+    response: &BrokerResponse,
+) -> Result<()> {
+    let bytes = serde_json::to_vec(response).context("serialize relay broker response")?;
+    if bytes.len() > MAX_BROKER_FRAME_BYTES {
+        anyhow::bail!("relay broker response exceeded the safety limit");
+    }
+    writer
+        .write_all(&bytes)
+        .await
+        .context("write relay broker response")?;
+    writer
+        .write_all(b"\n")
+        .await
+        .context("finish relay broker response")?;
+    writer.flush().await.context("flush relay broker response")
 }
 
 async fn run_remote_tui(
@@ -187,14 +539,33 @@ async fn run_remote_tui(
     requested_device: Option<&str>,
     remote_cwd: Option<&std::path::Path>,
 ) -> Result<()> {
-    let stock_codex_version = inspect_stock_codex().await?;
     let (state, session) = ensure_session(api, &paths.state).await?;
     let auth = api.auth().await?;
     let environments = api
         .list_environments(Some(&state.enrollment.client_id))
         .await?;
     let environment = select_environment(&environments, requested_device)?;
-    verify_remote_codex_version(&stock_codex_version, environment)?;
+    let local = update::local_codex_version().await?;
+    let remote = environment
+        .app_server_version
+        .as_deref()
+        .unwrap_or("unknown");
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(45),
+        automatic_update(paths, &local, remote),
+    )
+    .await
+    {
+        Ok(Ok(true)) => return restart_after_update(),
+        Ok(Ok(false)) => {}
+        Ok(Err(error)) => eprintln!("rcodex automatic update skipped: {error:#}"),
+        Err(_) => {
+            eprintln!("rcodex automatic update timed out; continuing with the installed version")
+        }
+    }
+    let _session = Installation::lock(&std::env::current_exe()?, false)?;
+    verify_stock_codex_version(&format!("codex-cli {local}"))?;
+    verify_remote_codex_version(environment)?;
     let environment_id = environment.env_id.clone();
     let environment_name = environment.display_name().to_owned();
     let relay =
@@ -232,31 +603,17 @@ async fn run_remote_tui(
     }
 }
 
-async fn inspect_stock_codex() -> Result<String> {
-    let version_output = tokio::process::Command::new("codex")
+async fn ensure_stock_codex_version() -> Result<()> {
+    let output = tokio::process::Command::new("codex")
         .arg("--version")
         .output()
         .await
         .context("run stock Codex CLI; ensure `codex` is on PATH")?;
-    if !version_output.status.success() {
+    if !output.status.success() {
         anyhow::bail!("stock Codex CLI could not report its version");
     }
-    let version_output =
-        String::from_utf8(version_output.stdout).context("stock Codex version is not UTF-8")?;
-    let version = parse_stock_codex_version(&version_output)?;
-
-    let help_output = tokio::process::Command::new("codex")
-        .arg("--help")
-        .output()
-        .await
-        .context("inspect stock Codex CLI remote terminal support")?;
-    if !help_output.status.success() {
-        anyhow::bail!("stock Codex CLI could not report its supported options");
-    }
-    let help_output =
-        String::from_utf8(help_output.stdout).context("stock Codex help is not UTF-8")?;
-    verify_stock_codex_capabilities(&help_output)?;
-    Ok(version)
+    let version = String::from_utf8(output.stdout).context("stock Codex version is not UTF-8")?;
+    verify_stock_codex_version(&version)
 }
 
 struct Paths {

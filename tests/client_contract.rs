@@ -1,8 +1,8 @@
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rcodex::{
-    api::{EnvironmentList, parse_retry_after},
+    api::{EnvironmentList, RemoteEnvironment, accept_environment_page, parse_retry_after},
     oauth::validate_step_up_token,
 };
 use serde_json::{Value, json};
@@ -64,4 +64,62 @@ fn retry_after_accepts_delta_seconds_and_rejects_unbounded_waits() {
     assert_eq!(parse_retry_after("2"), Some(Duration::from_secs(2)));
     assert_eq!(parse_retry_after("31"), Some(Duration::from_secs(30)));
     assert_eq!(parse_retry_after("not-a-delay"), None);
+}
+
+#[test]
+fn environment_pagination_is_bounded_and_rejects_cursor_loops() {
+    let environment = |index: usize| RemoteEnvironment {
+        app_server_version: Some("0.153.0".into()),
+        arch: Some("aarch64".into()),
+        busy: false,
+        client_type: Some("CODEX_CLI".into()),
+        display_name: Some(format!("Host {index}")),
+        env_id: format!("environment-{index}"),
+        host_name: None,
+        installation_id: None,
+        kind: Some("host".into()),
+        last_seen_at: None,
+        name: None,
+        online: true,
+        os: Some("macos".into()),
+    };
+    let mut environments = Vec::new();
+    let mut seen_cursors = BTreeSet::new();
+
+    let cursor = accept_environment_page(
+        &mut environments,
+        &mut seen_cursors,
+        EnvironmentList {
+            cursor: Some("next-page".into()),
+            items: (0..50).map(environment).collect(),
+        },
+    )
+    .unwrap();
+    assert_eq!(cursor.as_deref(), Some("next-page"));
+    assert!(
+        accept_environment_page(
+            &mut environments,
+            &mut seen_cursors,
+            EnvironmentList {
+                cursor: Some("next-page".into()),
+                items: Vec::new(),
+            },
+        )
+        .is_err()
+    );
+
+    let mut environments = Vec::new();
+    let mut seen_cursors = BTreeSet::new();
+    assert!(
+        accept_environment_page(
+            &mut environments,
+            &mut seen_cursors,
+            EnvironmentList {
+                cursor: Some("overflow".into()),
+                items: (0..100).map(environment).collect(),
+            },
+        )
+        .is_err()
+    );
+    assert!(environments.is_empty());
 }

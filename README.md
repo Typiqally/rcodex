@@ -37,37 +37,31 @@ stock Codex TUI
 
 - The controller currently requires macOS because its signing key is stored as
   a non-exportable key in the login Keychain.
-- The local Codex CLI must expose the `--remote` and
-  `--remote-auth-token-env` terminal options.
-- The local Codex CLI and remote App Server must report the same version.
+- The local Codex CLI and remote App Server must both be exactly `0.153.0`.
 - The remote host must already be configured and online in Codex Remote
   Control.
 - A ChatGPT-authenticated Codex CLI installation is required. API-key-only
   authentication is not supported.
 
-`rcodex` does not pin a particular Codex release. It checks capabilities and
-local/remote version parity at runtime, so matching future releases work
-without an `rcodex` update. Mismatched releases are rejected because the
-transport remains experimental; update the older Codex installation so both
-versions match. See OpenAI's documentation for the supported
+The exact version check is intentional while the relay protocol remains
+experimental. See OpenAI's documentation for the supported
 [App Server remote transport](https://developers.openai.com/codex/app-server)
 and the official [Remote connections](https://developers.openai.com/codex/remote-connections)
 workflow.
 
 ## Install
 
-Install Rust, then install the latest OpenAI Codex CLI release from npm and
-authenticate with ChatGPT:
+Install Rust, then install the exact compatible OpenAI Codex CLI release from
+npm and authenticate with ChatGPT:
 
 ```sh
-npm install -g @openai/codex@latest
+npm install -g @openai/codex@0.153.0
 codex login
 codex --version
 cargo install --locked --path .
 ```
 
-Install or update Codex on the remote host at the same time so its App Server
-version matches the local CLI. See the official
+`codex --version` must currently print `codex-cli 0.153.0`. See the official
 [Codex CLI guide](https://developers.openai.com/codex/cli/) for platform setup
 and authentication options.
 
@@ -118,6 +112,56 @@ rcodex devices
 rcodex session
 rcodex probe --device ENV_ID
 ```
+
+## Updates and compatibility monitoring
+
+Automatic updates are opt-in. Install a recent [GitHub CLI](https://cli.github.com/)
+with `gh attestation verify` support and authenticate it with `gh auth login`,
+then install this version of rcodex with `cargo install --locked --path .`.
+
+```sh
+rcodex update enable
+rcodex update check
+rcodex update install
+rcodex update disable
+rcodex update rollback
+```
+
+`enable` checks for updates at most once per day before a TUI session starts;
+it does not install a background service. Checks need an online paired host.
+Select a host with `rcodex --device ENV_ID update check` when several are online.
+Both local and remote Codex must match a version supported by the signed release.
+rcodex never upgrades either Codex installation itself.
+
+The updater verifies GitHub build attestations for both the compatibility manifest
+and binary, restricted to this repository's `release.yml` workflow, the release
+tag, and GitHub-hosted runners. It also verifies size and SHA-256 before replacing
+the executable atomically. Active TUI and broker sessions hold an installation
+lock, so updates wait until another invocation between sessions. A successful
+automatic update restarts rcodex before connecting the TUI. Network or signature
+failures keep the existing binary and its version checks in place.
+
+The previous executable is kept beside the installed binary as `rcodex.previous`.
+Rollback restores it and disables automatic updates. If a new executable cannot
+start, copy `~/.cargo/bin/rcodex.previous` over `~/.cargo/bin/rcodex` while no
+session is running, then run `rcodex update disable`. Update settings are stored in
+`${RCODEX_HOME:-~/.rcodex}/update.json`; uninstalling does not delete the backup
+or installation lock file. Remove those files after uninstalling if desired.
+
+The daily `Codex compatibility` GitHub Action compares the latest stable npm
+release against the pinned release using isolated installations, remote CLI
+options, generated App Server schemas, and offline contract tests. It opens one
+draft evidence PR per new version or a deduplicated issue when a check fails.
+Schema changes require review; unchanged schemas still require live relay testing.
+The action does not change the compatibility pin or approve a release.
+
+These workflows become active after they are committed to the repository's
+default branch. In repository **Settings → Actions → General → Workflow
+permissions**, enable **Allow GitHub Actions to create and approve pull requests**
+for the proposal workflow. The workflow never approves or merges PRs, and PRs
+created with `GITHUB_TOKEN` do not automatically trigger ordinary PR CI;
+offline tests run before proposal creation. See [RELEASING.md](RELEASING.md) for
+the personal/live test gate and first signed release setup.
 
 ## Codex remote-control FAQ
 
