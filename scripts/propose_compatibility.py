@@ -72,8 +72,8 @@ def main():
         run("git", "push", "origin", branch)
         revision = run("git", "rev-parse", "--short", "HEAD")
     body = (f"Codex {version} is available. Offline result: `{evidence['status']}`. "
-            f"[Check evidence]({run_url}). This proposal records schema/CLI evidence; the compatibility pin stays unchanged.\n\n"
-            "After live validation, make a separate implementation change to the compatibility pin, tests, README and changelog, "
+            f"[Check evidence]({run_url}). This proposal records schema/CLI evidence; the validation baseline stays unchanged.\n\n"
+            "After live validation, make a separate implementation change to the validation baseline, tests, README and changelog, "
             "then rerun CI and personal testing. Do not treat a matching schema as proof of relay compatibility.\n\n"
             "## Manual test\n\n- [ ] I personally tested this feature and approve merging.\n\n"
             f"Test plan: On a dedicated authenticated Mac and paired test host running Codex {version}, "

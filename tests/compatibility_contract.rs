@@ -71,7 +71,7 @@ fn stock_codex_must_expose_both_remote_terminal_options() {
 
 #[test]
 fn matching_local_and_remote_versions_are_accepted() {
-    for version in ["0.152.0", "99.4.0", "0.154.0-alpha.1"] {
+    for version in ["0.152.0", "0.162.0", "99.4.0", "0.154.0-alpha.1"] {
         verify_remote_codex_version(version, &environment(Some(version))).unwrap();
     }
 }

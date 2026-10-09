@@ -20,9 +20,9 @@ def stable_version(value):
 
 def supported_version():
     source = (ROOT / "src" / "compatibility.rs").read_text()
-    match = re.search(r'SUPPORTED_CODEX_VERSION: &str = "([^"]+)"', source)
+    match = re.search(r'VALIDATED_CODEX_VERSION: &str = "([^"]+)"', source)
     if not match:
-        raise ValueError("could not find the Codex compatibility pin")
+        raise ValueError("could not find the validated Codex baseline")
     return stable_version(match.group(1))
 
 

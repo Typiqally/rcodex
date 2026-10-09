@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
       live_relay_validated:
-        description: "Enrollment, refresh, relay, TUI task and cancellation passed on the pinned Codex version"
+        description: "Enrollment, refresh, relay, TUI task and cancellation passed on the validated Codex version"
         required: true
         type: boolean
         default: false

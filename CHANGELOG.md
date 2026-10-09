@@ -23,8 +23,9 @@ All notable changes to this project will be documented here. The format follows
 ### Changed
 
 - Updated rustls to `0.23.45` to address `RUSTSEC-2026-0285`.
-- Updated the strict local CLI and remote App Server compatibility pin to
-  Codex `0.153.0`.
+- Restored runtime remote CLI capability checks and local/remote version
+  parity, so matching current Codex releases work without updating a version pin.
+- Updated the monitored release-validation baseline to Codex `0.162.0`.
 - Improved README discoverability for Codex CLI remote control, remote terminal
   UI, Codex App Server, and remote development searches.
 - Token refresh now abandons its write if another process changed the Codex

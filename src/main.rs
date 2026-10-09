@@ -8,7 +8,9 @@ use rcodex::{
         BrokerAction, BrokerErrorCode, BrokerHost, BrokerResponse, BrokerSession,
         MAX_BROKER_FRAME_BYTES, decode_request,
     },
-    compatibility::{verify_remote_codex_version, verify_stock_codex_version},
+    compatibility::{
+        parse_stock_codex_version, verify_remote_codex_version, verify_stock_codex_capabilities,
+    },
     controller::{enroll, ensure_session},
     shim::{LocalShim, SHIM_AUTH_TOKEN_ENV, codex_remote_args, select_environment},
     state::load_controller_state,
@@ -266,7 +268,7 @@ async fn run_update(action: UpdateAction, paths: &Paths, device: Option<&str>) -
             );
         }
         UpdateAction::Check | UpdateAction::Install => {
-            let local = update::local_codex_version().await?;
+            let local = inspect_stock_codex().await?;
             let api = RelayApi::new(paths.auth.clone())?;
             let (state, _) = ensure_session(&api, &paths.state).await?;
             let environments = api
@@ -455,7 +457,7 @@ async fn open_remote_app_server(
     paths: &Paths,
     environment_id: &str,
 ) -> std::result::Result<RelayTransport, BrokerErrorCode> {
-    ensure_stock_codex_version()
+    let local_version = inspect_stock_codex()
         .await
         .map_err(|_| BrokerErrorCode::IncompatibleVersion)?;
     let (state, session) = ensure_session(api, &paths.state)
@@ -476,7 +478,8 @@ async fn open_remote_app_server(
     if !environment.online {
         return Err(BrokerErrorCode::HostOffline);
     }
-    verify_remote_codex_version(environment).map_err(|_| BrokerErrorCode::IncompatibleVersion)?;
+    verify_remote_codex_version(&local_version, environment)
+        .map_err(|_| BrokerErrorCode::IncompatibleVersion)?;
     RelayTransport::connect(&auth, &state.enrollment, &session, environment_id)
         .await
         .map_err(|error| classify_broker_error(&error))
@@ -545,7 +548,7 @@ async fn run_remote_tui(
         .list_environments(Some(&state.enrollment.client_id))
         .await?;
     let environment = select_environment(&environments, requested_device)?;
-    let local = update::local_codex_version().await?;
+    let local = inspect_stock_codex().await?;
     let remote = environment
         .app_server_version
         .as_deref()
@@ -564,8 +567,7 @@ async fn run_remote_tui(
         }
     }
     let _session = Installation::lock(&std::env::current_exe()?, false)?;
-    verify_stock_codex_version(&format!("codex-cli {local}"))?;
-    verify_remote_codex_version(environment)?;
+    verify_remote_codex_version(&local, environment)?;
     let environment_id = environment.env_id.clone();
     let environment_name = environment.display_name().to_owned();
     let relay =
@@ -603,17 +605,38 @@ async fn run_remote_tui(
     }
 }
 
-async fn ensure_stock_codex_version() -> Result<()> {
-    let output = tokio::process::Command::new("codex")
-        .arg("--version")
-        .output()
-        .await
-        .context("run stock Codex CLI; ensure `codex` is on PATH")?;
+async fn inspect_stock_codex() -> Result<String> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        tokio::process::Command::new("codex")
+            .arg("--version")
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .context("Codex version check timed out")??;
     if !output.status.success() {
         anyhow::bail!("stock Codex CLI could not report its version");
     }
-    let version = String::from_utf8(output.stdout).context("stock Codex version is not UTF-8")?;
-    verify_stock_codex_version(&version)
+    let version = parse_stock_codex_version(
+        std::str::from_utf8(&output.stdout).context("Codex version is not UTF-8")?,
+    )?;
+    let help = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        tokio::process::Command::new("codex")
+            .arg("--help")
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .context("Codex help check timed out")??;
+    if !help.status.success() {
+        anyhow::bail!("stock Codex CLI could not report its supported options");
+    }
+    verify_stock_codex_capabilities(
+        std::str::from_utf8(&help.stdout).context("Codex help is not UTF-8")?,
+    )?;
+    Ok(version)
 }
 
 struct Paths {

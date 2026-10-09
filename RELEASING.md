@@ -35,14 +35,14 @@ depends on undocumented upstream behavior.
 ## Signed binary releases
 
 The `Signed macOS release` workflow builds Apple Silicon and Intel binaries,
-writes `rcodex-update.json` with the exact supported Codex version, byte sizes,
+writes `rcodex-update.json` with the last validated Codex version, byte sizes,
 and SHA-256 digests, and signs all three artifacts using GitHub/Sigstore build
 attestations. No persistent signing-key secret is needed. This setup requires a
 public repository (or an Enterprise plan for private-repository attestations).
 Attestations establish provenance; they are not Apple notarization.
 
 After the checklist above, personally test the tagged build on a dedicated
-authenticated Mac and paired host running the pinned Codex version. Exercise
+authenticated Mac and paired host running the validated Codex version. Exercise
 enrollment, session refresh, relay initialization, a stock TUI task, cancellation,
 and reconnect. Keep real account data and credentials out of public CI. The
 current workflow records your confirmation; it does not run live relay tests or
@@ -67,7 +67,7 @@ so increment the rcodex package version for each update.
 Until the first attested binary release is published, source-installed clients
 can enable the updater but will find no eligible update. The daily compatibility
 workflow produces evidence proposals only. A maintainer must validate relay
-behavior, update the compatibility pin and related tests/docs, and obtain personal
+behavior, update the validation baseline and related tests/docs, and obtain personal
 test sign-off for the changed runtime before shipping support for a new Codex
 version.
 
