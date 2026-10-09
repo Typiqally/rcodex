@@ -6,6 +6,12 @@ run the official Codex terminal locally while Codex works with the files,
 shell, tools, and compute on another development machine through OpenAI's
 relay.
 
+The companion project [rclaude](https://github.com/Typiqally/rclaude) provides
+remote Claude Code session access through the official Claude terminal UI and
+a bounded attachment broker. Both projects follow the same publishing and
+security conventions, with independent provider protocols and release versions.
+See [related-project maintenance](docs/related-projects.md).
+
 Unlike a custom web interface or SSH wrapper, `rcodex` does not replace the
 `codex` executable, install a second TUI, or expose Codex App Server directly
 to the public internet.

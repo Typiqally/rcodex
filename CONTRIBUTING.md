@@ -32,3 +32,9 @@ user's login Keychain without explicit consent.
 
 By contributing, you agree that your contribution is licensed under the MIT
 License.
+
+## Related project
+
+For changes that also apply to [rclaude](https://github.com/Typiqally/rclaude),
+follow the [related-project maintenance checklist](docs/related-projects.md).
+Record the companion change or explain why it does not apply in the PR.

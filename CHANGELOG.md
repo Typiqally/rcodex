@@ -8,6 +8,8 @@ All notable changes to this project will be documented here. The format follows
 
 ### Added
 
+- Companion-project links to rclaude and a shared maintenance checklist for
+  publishing, security, and broker conventions.
 - Opt-in daily signed binary updates, compatibility-aware release selection,
   active-session installation locks, and rollback that disables auto-updates.
 - Daily upstream Codex CLI/schema checks with deduplicated draft evidence PRs
