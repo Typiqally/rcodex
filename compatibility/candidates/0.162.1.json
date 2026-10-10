@@ -1,0 +1,7 @@
+{
+  "supported_codex_version": "0.162.0",
+  "candidate_codex_version": "0.162.1",
+  "status": "offline-checks-passed",
+  "schema_changes": [],
+  "live_relay_validated": false
+}
