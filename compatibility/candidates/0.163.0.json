@@ -1,0 +1,27 @@
+{
+  "supported_codex_version": "0.162.0",
+  "candidate_codex_version": "0.163.0",
+  "status": "needs-review",
+  "schema_changes": [
+    "added: v2/ThreadItemsReadParams.json",
+    "added: v2/ThreadItemsReadResponse.json",
+    "added: v2/ThreadReadStateChangedNotification.json",
+    "added: v2/ThreadReadStateUpdateParams.json",
+    "added: v2/ThreadReadStateUpdateResponse.json",
+    "changed: ClientRequest.json",
+    "changed: ServerNotification.json",
+    "changed: codex_app_server_protocol.schemas.json",
+    "changed: codex_app_server_protocol.v2.schemas.json",
+    "changed: v2/EnvironmentAddParams.json",
+    "changed: v2/RawResponseItemCompletedNotification.json",
+    "changed: v2/ThreadForkParams.json",
+    "changed: v2/ThreadListParams.json",
+    "changed: v2/ThreadListResponse.json",
+    "changed: v2/ThreadReadResponse.json",
+    "changed: v2/ThreadRealtimeListVoicesResponse.json",
+    "changed: v2/ThreadRealtimeStartParams.json",
+    "changed: v2/ThreadResumeParams.json",
+    "changed: v2/TurnStartParams.json"
+  ],
+  "live_relay_validated": false
+}
